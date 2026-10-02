@@ -1,4 +1,4 @@
-const CACHE = 'aya-series-v1.0.0';
+const CACHE = 'aya-series-v1.1.0';
 const SHELL = ['./', './index.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'];
 

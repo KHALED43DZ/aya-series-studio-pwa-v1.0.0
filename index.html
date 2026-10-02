@@ -87,10 +87,9 @@ details>summary{cursor:pointer;color:var(--tx);font-weight:700}
   <label>النموذج</label>
   <input id="model" list="ml" dir="ltr"><datalist id="ml"><option>gemini-2.5-flash</option><option>gemini-2.5-pro</option><option>gemini-2.0-flash</option></datalist>
   <label style="display:flex;gap:8px;align-items:center;color:var(--tx)"><input type="checkbox" id="sk" checked style="width:auto">احفظ المفاتيح على هذا الجهاز</label>
-  <label style="display:flex;gap:8px;align-items:center;color:var(--tx)"><input type="checkbox" id="dlg" style="width:auto">أدرج حوار آية داخل برومبت كل مشهد (لتوليد الصوت في Flow)</label>
   <div class="row" style="margin-top:10px"><button class="g" id="tst" type="button">اختبار الاتصال</button><button class="g" id="upd" type="button">تحديث التطبيق</button></div>
   <div class="lg" style="margin-top:8px">الإصدار <b id="ver2" dir="ltr"></b></div>
-  <details class="lg"><summary>ما الجديد</summary><div>1.0.0: النسخة الأولى: مسلسل تعليمي كامل بخطة حلقات تلقائية، أسلوب Pixar ثابت، Gemini فقط، تصدير/استيراد المسلسلات.</div></details>
+  <details class="lg"><summary>ما الجديد</summary><div>1.1.0: الحوار المشكول داخل كل برومبت مشهد، فيديوهات بلا موسيقى، برومبت موسيقى لكل حلقة بطابع موحّد للمسلسل، زر تشكيل الحوار.<br>1.0.0: النسخة الأولى: مسلسل تعليمي كامل بخطة حلقات تلقائية، أسلوب Pixar ثابت، Gemini فقط، تصدير/استيراد المسلسلات.</div></details>
  </div>
  <div class="box">
   <h2 style="margin-top:0">النسخ الاحتياطي</h2>
@@ -105,7 +104,7 @@ details>summary{cursor:pointer;color:var(--tx);font-weight:700}
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const S=v=>typeof v=='string'?v:'',A=v=>Array.isArray(v)?v:[];
-const VER='1.0.0';
+const VER='1.1.0';
 /* أسلوب Pixar ثابت لكل البرومبتات (غيّر هذا الثابت فقط إن رفضت أداتك الكلمة) */
 const STYLE='Pixar-style 3D animated feature-film look, original characters, soft cinematic lighting, vibrant warm colors, expressive stylized proportions';
 const TOPICS=[
@@ -133,7 +132,7 @@ const LANG={fusha:'Simple Modern Standard Arabic (فصحى مبسطة): very sho
 const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:v}catch(e){return d}},set(k,v){try{localStorage.setItem(k,v);return true}catch(e){return false}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
 let D=null,SER=[],BUSY=0,STOP=false,PRE='',GEN=0,rot=0,TP='';
 const OPEN=new Set();
-let P={age:'4-5',lang:'fusha',scenes:8,dlg:false};
+let P={age:'4-5',lang:'fusha',scenes:8};
 try{Object.assign(P,JSON.parse(LS.get('aya_p','{}')))}catch(e){}
 
 /* ---------- tabs ---------- */
@@ -145,10 +144,9 @@ $('#ver').textContent='v'+VER;$('#ver2').textContent=VER;
 $('#keys').value=LS.get('aya_k','');$('#model').value=LS.get('aya_m','')||'gemini-2.5-flash';
 function persist(){if($('#sk').checked)LS.set('aya_k',$('#keys').value);else LS.del('aya_k');LS.set('aya_m',$('#model').value)}
 ['keys','model'].forEach(i=>$('#'+i).addEventListener('input',persist));$('#sk').addEventListener('change',persist);
-function loadP(){$('#age').value=P.age;$('#lang').value=P.lang;$('#nsc').value=String(P.scenes);$('#dlg').checked=!!P.dlg}
-function saveP(){P.age=$('#age').value;P.lang=$('#lang').value;P.scenes=+$('#nsc').value;P.dlg=$('#dlg').checked;LS.set('aya_p',JSON.stringify(P))}
+function loadP(){$('#age').value=P.age;$('#lang').value=P.lang;$('#nsc').value=String(P.scenes)}
+function saveP(){P.age=$('#age').value;P.lang=$('#lang').value;P.scenes=+$('#nsc').value;LS.set('aya_p',JSON.stringify(P))}
 loadP();['age','lang','nsc'].forEach(id=>$('#'+id).onchange=saveP);
-$('#dlg').onchange=()=>{saveP();if(D)render()};
 $('#upd').onclick=async()=>{$('#st').textContent='جارٍ التحديث…';try{const rs=await navigator.serviceWorker.getRegistrations();await Promise.all(rs.map(r=>r.unregister()));const ks=await caches.keys();await Promise.all(ks.map(k=>caches.delete(k)))}catch(e){}location.reload()};
 
 /* ---------- Gemini ---------- */
@@ -180,7 +178,14 @@ $('#tst').onclick=async()=>{$('#st').textContent='جارٍ اختبار الات
 
 /* ---------- prompts ---------- */
 const TAIL=' '+STYLE+'. Vertical 9:16, no text, letters or subtitles in the frame.';
-const fin=s=>S(s.prompt_en).trim().replace(/[\s.]+$/,'')+'.'+TAIL+(P.dlg&&s.narration_ar?' Aya says in Arabic: "'+s.narration_ar+'"':'');
+const fin=s=>S(s.prompt_en).trim().replace(/[\s.]+$/,'')+'.'+TAIL+(s.narration_ar?' Aya says slowly and clearly in Arabic: "'+s.narration_ar.replace(/"/g,'')+'". Audio: only Aya\'s clear voice and soft natural sound effects, no background music, no singing.':' Audio: soft natural sound effects only, no background music, no singing.');
+const DEFMUSIC='gentle playful instrumental for toddlers: xylophone, soft ukulele, light piano and pizzicato strings, about 95 BPM, major key, warm and cheerful';
+const mm=t=>Math.floor(t/60)+':'+String(t%60).padStart(2,'0');
+const mfin=g=>{const t=g.scenes.length*8;return pe(g.music.prompt_en)+' Instrumental only, no vocals, no lyrics. Total length exactly '+t+' seconds ('+mm(t)+'), ending with a gentle fade-out. Warm soft mix that leaves room for a speaking voice.'};
+const strip=t=>S(t).replace(/[\u064B-\u0652\u0670]/g,'').replace(/[أإآٱ]/g,'ا');
+const needsDia=g=>g.scenes.some(s=>s.narration_ar&&!/[\u064B-\u0652]/.test(s.narration_ar));
+const MUSIC_RULES=n=>`- music.prompt_en: an English prompt (60-110 words) for an AI music generator, for the WHOLE episode (${n*8} seconds). Base it on the series music identity; describe instruments, tempo (BPM), key and mood, and a timeline of sections matched to the scenes in 8-second steps (for example 0:00-0:08 soft playful intro). Keep it gentle, simple and quiet enough to sit under a speaking child. Never mention vocals or lyrics.
+- music.notes_ar: 1-2 short Arabic sentences telling the editor where to lower the volume or fade the music.`;
 const pe=t=>S(t).trim().replace(/[\s.]+$/,'')+'.';
 const cpr=c=>pe(c.ref_prompt_en||('Character reference sheet of '+c.en+': '+c.look+'. Full body, neutral pose, front, side and back views, plain light background'))+' '+STYLE+'. Original design, no text, no watermark, vertical 9:16.';
 const ppr=c=>pe(c.ref_prompt_en||('Wide establishing shot of '+c.en+': '+c.look+'. No people in frame'))+' '+STYLE+'. No text, no watermark, vertical 9:16.';
@@ -197,8 +202,9 @@ ${o.extra?'EXTRA INSTRUCTIONS FROM THE PARENT: '+o.extra+'\n':''}Return:
 - title_ar: a catchy series title in Arabic.
 - characters: 0-2 friendly supporting characters (only if useful, e.g. an animal or toy companion). Each: ar, en (short English name, 1-3 words), look (English visual description: species or shape, colors, size, accessories; simple enough to reproduce consistently), ref_prompt_en (self-contained English image prompt for a character reference sheet: full body, neutral pose, front/side/back views, plain light background; no style words).
 - places: 2-4 recurring places (e.g. a cozy learning room, a garden). Each: ar, en (short English name), look (English: layout, colors, props, lighting), ref_prompt_en (self-contained English prompt for a wide establishing shot with no people; no style words).
+- music_style: the musical identity of the whole series, used for every episode: ar (one short Arabic sentence) and en (English: main instruments, tempo in BPM, key and mood; gentle, playful, instrumental, suitable for toddlers).
 - episodes: array in teaching order, each: title_ar, goal_ar (one short sentence), items (array of Arabic strings: exactly what is taught in that episode).
-Return ONLY JSON: {"title_ar":"","characters":[{"ar":"","en":"","look":"","ref_prompt_en":""}],"places":[{"ar":"","en":"","look":"","ref_prompt_en":""}],"episodes":[{"title_ar":"","goal_ar":"","items":[""]}]}`;
+Return ONLY JSON: {"title_ar":"","characters":[{"ar":"","en":"","look":"","ref_prompt_en":""}],"places":[{"ar":"","en":"","look":"","ref_prompt_en":""}],"music_style":{"ar":"","en":""},"episodes":[{"title_ar":"","goal_ar":"","items":[""]}]}`;
 }
 function epPrompt(e,prev){
  const ch=D.characters.map(c=>'- '+c.en+': '+c.look).join('\n')||'(none)',pl=D.places.map(c=>'- '+c.en+': '+c.look).join('\n');
@@ -210,6 +216,7 @@ SUPPORTING CHARACTERS (use the exact English name and look when they appear):
 ${ch}
 PLACES (use only these, exact English name and look):
 ${pl}
+MUSIC IDENTITY OF THE SERIES: ${D.music.en}
 PREVIOUS EPISODES (for continuity, do not re-teach them):
 ${prev}
 THIS EPISODE: number ${e.n} of ${D.plan.length} — "${e.title_ar}". Goal: ${e.goal_ar}. Teach exactly these items: ${e.items.join('، ')}.
@@ -221,11 +228,13 @@ SCENE RULES:
 - prompt_en: English, 45-90 words, for a video generator. Begin with the place's exact English name followed by its look description, then the camera movement, what Aya does and what appears. Mention Aya by name only. Use a supporting character's exact English name and look when it appears.
 - Everything must be gentle, safe, bright and age-appropriate: nothing scary or violent, no brands or logos, no real people.
 - Do NOT put any written text, letters, numbers or subtitles inside the scene; they are added later as an overlay. Keep the upper third of the frame uncluttered for that overlay. Do NOT write the visual style (it is added automatically).
-- narration_ar: what Aya says in this scene, in the dialogue language: 1-3 very short sentences with repetition, fitting 8 seconds.
-- onscreen_ar: the short Arabic text, letter or number to overlay (max 4 words, with diacritics when teaching letters); empty string if none.
+- narration_ar: what Aya says in this scene, in the dialogue language: 1-3 very short sentences with repetition, at most 14 words, fitting 8 seconds. It MUST be fully vowelled with complete Arabic diacritics (tashkeel: fatha, damma, kasra, sukun, shadda, tanween) on every word so a speech engine pronounces it correctly. Do not use double quotation marks inside it.
+- onscreen_ar: the short Arabic text, letter or number to overlay (max 4 words, with diacritics); empty string if none.
 - place: the exact English name of the place used.
 Also write caption_ar (2 short parent-friendly lines for YouTube/TikTok) and hashtags (6-8 tags, Arabic and English, no spaces inside a tag).
-Return ONLY JSON: {"title_ar":"","scenes":[{"place":"","prompt_en":"","narration_ar":"","onscreen_ar":""}],"caption_ar":"","hashtags":[""]}`;
+The videos are generated WITHOUT background music; one music track for the whole episode is generated separately and added in editing. So also write:
+${MUSIC_RULES(D.scenes)}
+Return ONLY JSON: {"title_ar":"","scenes":[{"place":"","prompt_en":"","narration_ar":"","onscreen_ar":""}],"caption_ar":"","hashtags":[""],"music":{"prompt_en":"","notes_ar":""}}`;
 }
 
 /* ---------- data ---------- */
@@ -234,16 +243,16 @@ function mkSeries(P0,o){
  const plan=A(P0.episodes).slice(0,40).map((e,i)=>({n:i+1,title_ar:S(e&&e.title_ar)||'حلقة '+(i+1),goal_ar:S(e&&e.goal_ar),items:A(e&&e.items).map(String)}));
  if(!plan.length)throw Error('لم يُرجع النموذج حلقات، أعد المحاولة');
  return{id:Date.now(),title:S(P0.title_ar)||o.label,topic:o.label,hint:o.hint,age:o.age,lang:o.lang,scenes:o.scenes,
-  characters:A(P0.characters).slice(0,3).map(ent).filter(c=>c.en),places:A(P0.places).slice(0,5).map(ent).filter(c=>c.en),plan,eps:{}};
+  characters:A(P0.characters).slice(0,3).map(ent).filter(c=>c.en),places:A(P0.places).slice(0,5).map(ent).filter(c=>c.en),music:{ar:S(P0.music_style&&P0.music_style.ar),en:S(P0.music_style&&P0.music_style.en)||DEFMUSIC},plan,eps:{}};
 }
 function normS(p,i){
  const plan=A(p.plan).slice(0,40).map((e,k)=>({n:k+1,title_ar:S(e&&e.title_ar),goal_ar:S(e&&e.goal_ar),items:A(e&&e.items).map(String)}));
  const eps={};const src=p.eps&&typeof p.eps=='object'?p.eps:{};
  for(const k of Object.keys(src)){const n=+k,e=src[k];if(n>=1&&n<=plan.length&&e&&typeof e=='object'){
   const sc=A(e.scenes).map(x=>({place:S(x&&x.place),prompt_en:S(x&&x.prompt_en),narration_ar:S(x&&x.narration_ar),onscreen_ar:S(x&&x.onscreen_ar)})).filter(x=>x.prompt_en);
-  if(sc.length)eps[n]={title_ar:S(e.title_ar),scenes:sc,caption_ar:S(e.caption_ar),hashtags:A(e.hashtags).map(String),pub:!!e.pub}}}
+  if(sc.length)eps[n]={title_ar:S(e.title_ar),scenes:sc,caption_ar:S(e.caption_ar),hashtags:A(e.hashtags).map(String),pub:!!e.pub,music:{prompt_en:S(e.music&&e.music.prompt_en),notes_ar:S(e.music&&e.music.notes_ar)}}}}
  return{id:(typeof p.id=='number'&&isFinite(p.id))?p.id:Date.now()+i,title:S(p.title),topic:S(p.topic),hint:S(p.hint),age:AGE[p.age]?p.age:'4-5',lang:LANG[p.lang]?p.lang:'fusha',
-  scenes:Math.min(16,Math.max(4,+p.scenes||8)),characters:A(p.characters).map(ent),places:A(p.places).map(ent),plan,eps};
+  scenes:Math.min(16,Math.max(4,+p.scenes||8)),characters:A(p.characters).map(ent),places:A(p.places).map(ent),music:{ar:S(p.music&&p.music.ar),en:S(p.music&&p.music.en)||DEFMUSIC},plan,eps};
 }
 SER=(()=>{try{return A(JSON.parse(LS.get('aya_s','[]'))).map(normS).filter(s=>s.plan.length)}catch(e){return[]}})();
 function save(){
@@ -303,6 +312,7 @@ function render(){
   ${D.places.map((c,i)=>`<div class="sub"><span class="tag i"><span class="p">${esc(c.en)}</span> · ${esc(c.ar)}</span><div class="pr">${esc(ppr(c))}</div><div class="acts"><button class="g" data-a="cpp" data-i="${i}">نسخ البرومبت</button></div></div>`).join('')}
   ${D.characters.map((c,i)=>`<div class="sub"><span class="tag i"><span class="c">${esc(c.en)}</span> · ${esc(c.ar)}</span><div class="pr">${esc(cpr(c))}</div><div class="acts"><button class="g" data-a="cpc" data-i="${i}">نسخ البرومبت</button></div></div>`).join('')}
   <div class="acts"><button class="g" data-a="cpr">نسخ كل برومبتات الأماكن والشخصيات</button></div>
+  <div class="sub"><b>الطابع الموسيقي للمسلسل</b><div class="lg">كل الفيديوهات تُولَّد بلا موسيقى، وتُضاف موسيقى واحدة لكل حلقة في المونتاج بهذا الطابع.</div><div class="nar">${esc(D.music.ar)}</div><div class="pr">${esc(D.music.en)}</div></div>
  </details>
  <div id="eps">${D.plan.map(e=>`<div class="box ep" id="ep${e.n}"></div>`).join('')}</div>`;
  renderHead();D.plan.forEach(e=>renderEp(e.n));
@@ -315,18 +325,19 @@ function renderHead(){
 function renderEp(n){
  const box=$('#ep'+n);if(!box||!D)return;
  const e=D.plan[n-1],g=D.eps[n],open=OPEN.has(n);
+ const mus=g?(g.music&&g.music.prompt_en?`<div class="box"><b>موسيقى الحلقة (تُضاف مرة واحدة في المونتاج)</b><div class="pr">${esc(mfin(g))}</div><div class="nar">${esc(g.music.notes_ar)}</div><div class="acts"><button class="g" data-a="cpm" data-n="${n}">نسخ برومبت الموسيقى</button><button class="g" data-a="mus" data-n="${n}">إعادة اقتراح</button></div></div>`:`<div class="box"><b>موسيقى الحلقة</b><p class="lg">لا يوجد برومبت موسيقى لهذه الحلقة بعد.</p><div class="acts"><button class="g" data-a="mus" data-n="${n}">اقترح موسيقى</button></div></div>`):'';
  const badge=GEN==n?'<span class="tag run">جارٍ التوليد…</span>':g?(g.pub?'<span class="tag ok">نُشرت ✓</span>':'<span class="tag ok">جاهزة</span>'):'<span class="tag no">لم تُولَّد</span>';
  box.innerHTML=`<h3 class="eh"><span>حلقة ${n}: ${esc(g&&g.title_ar||e.title_ar)}</span>${badge}</h3>
  <div class="lg">${esc(e.goal_ar)}</div><div>${e.items.map(i=>`<span class="tag i">${esc(i)}</span>`).join('')}</div>
- <div class="acts"><button class="${g?'g':'b'}" data-a="gen" data-n="${n}">${g?'إعادة توليد الحلقة':'ولّد الحلقة'}</button>${g?`<button class="g" data-a="tog" data-n="${n}">${open?'إخفاء المشاهد':'عرض المشاهد'}</button><button class="g" data-a="cpe" data-n="${n}">نسخ كل برومبتات الحلقة</button><button class="g" data-a="dle" data-n="${n}">تنزيل .txt</button>`:''}</div>
+ <div class="acts"><button class="${g?'g':'b'}" data-a="gen" data-n="${n}">${g?'إعادة توليد الحلقة':'ولّد الحلقة'}</button>${g?`<button class="g" data-a="tog" data-n="${n}">${open?'إخفاء المشاهد':'عرض المشاهد'}</button><button class="g" data-a="cpe" data-n="${n}">نسخ كل برومبتات الحلقة</button><button class="g" data-a="dle" data-n="${n}">تنزيل .txt</button>${needsDia(g)?`<button class="g" data-a="dia" data-n="${n}">تشكيل الحوار</button>`:''}`:''}</div>
  ${g?`<label style="display:flex;gap:8px;align-items:center;color:var(--tx);margin-top:8px"><input type="checkbox" data-pub="${n}" ${g.pub?'checked':''} style="width:auto">تم نشر هذه الحلقة</label>`:''}
  ${g&&open?`<div class="sub">${g.scenes.map((s,i)=>`<div class="box sc"><h3><span>مشهد ${i+1}</span><span class="tag i p">${esc(s.place)}</span></h3><div class="pr">${hl(fin(s))}</div><div class="nar">آية: ${esc(s.narration_ar)}</div><div class="os">على الشاشة: ${esc(s.onscreen_ar||'—')}</div><div class="acts"><button class="g" data-a="cps" data-n="${n}" data-i="${i}">نسخ البرومبت</button><button class="g" data-a="cpn" data-n="${n}" data-i="${i}">نسخ الحوار</button></div></div>`).join('')}
- <div class="box"><b>حزمة النشر</b><div class="nar">${esc(g.caption_ar)}</div><div>${g.hashtags.map(h=>`<span class="tag i" dir="auto">${esc(h)}</span>`).join('')}</div><div class="acts"><button class="g" data-a="cpcap" data-n="${n}">نسخ الوصف والهاشتاقات</button></div></div></div>`:''}`;
+ ${mus}<div class="box"><b>حزمة النشر</b><div class="nar">${esc(g.caption_ar)}</div><div>${g.hashtags.map(h=>`<span class="tag i" dir="auto">${esc(h)}</span>`).join('')}</div><div class="acts"><button class="g" data-a="cpcap" data-n="${n}">نسخ الوصف والهاشتاقات</button></div></div></div>`:''}`;
 }
 const dlf=(u,n)=>{const a=document.createElement('a');a.href=u;a.download=n;a.click()};
 const dlt=(t,n,type)=>{const u=URL.createObjectURL(new Blob([t],{type:type||'text/plain;charset=utf-8'}));dlf(u,n);setTimeout(()=>URL.revokeObjectURL(u),8000)};
 const cp=(t,b)=>{navigator.clipboard.writeText(t).catch(()=>{});if(b){const o=b.textContent;b.textContent='تم النسخ ✓';setTimeout(()=>b.textContent=o,1400)}};
-const epTxt=n=>{const g=D.eps[n];return '### حلقة '+n+': '+(g.title_ar||D.plan[n-1].title_ar)+'\n\n'+g.scenes.map((s,i)=>'[مشهد '+(i+1)+' — '+s.place+']\n'+fin(s)+'\nحوار آية: '+s.narration_ar+'\nعلى الشاشة: '+(s.onscreen_ar||'—')).join('\n\n')+'\n\nالوصف:\n'+g.caption_ar+'\n'+g.hashtags.join(' ')};
+const epTxt=n=>{const g=D.eps[n];return '### حلقة '+n+': '+(g.title_ar||D.plan[n-1].title_ar)+'\n\n'+g.scenes.map((s,i)=>'[مشهد '+(i+1)+' — '+s.place+']\n'+fin(s)+'\nحوار آية: '+s.narration_ar+'\nعلى الشاشة: '+(s.onscreen_ar||'—')).join('\n\n')+'\n\nالوصف:\n'+g.caption_ar+'\n'+g.hashtags.join(' ')+(g.music&&g.music.prompt_en?'\n\nبرومبت موسيقى الحلقة:\n'+mfin(g):'')};
 const serTxt=()=>'# '+D.title+'\n\n'+refs()+Object.keys(D.eps).map(Number).sort((a,b)=>a-b).map(n=>'\n\n'+epTxt(n)).join('');
 const fname=s=>(s||'series').replace(/[^\w\u0600-\u06FF]+/g,'_').slice(0,40);
 
@@ -336,7 +347,36 @@ async function genEp(n){
  const R=await js(epPrompt(e,prev));
  const scenes=A(R.scenes).map(x=>({place:S(x&&x.place),prompt_en:S(x&&x.prompt_en),narration_ar:S(x&&x.narration_ar),onscreen_ar:S(x&&x.onscreen_ar)})).filter(x=>x.prompt_en);
  if(!scenes.length)throw Error('لم تُرجع الحلقة أي مشاهد، أعد المحاولة');
- D.eps[n]={title_ar:S(R.title_ar)||e.title_ar,scenes,caption_ar:S(R.caption_ar),hashtags:A(R.hashtags).map(String),pub:false};
+ D.eps[n]={title_ar:S(R.title_ar)||e.title_ar,scenes,caption_ar:S(R.caption_ar),hashtags:A(R.hashtags).map(String),pub:false,music:{prompt_en:S(R.music&&R.music.prompt_en),notes_ar:S(R.music&&R.music.notes_ar)}};
+ if(needsDia(D.eps[n])){try{await fixDia(n)}catch(e){}}
+}
+async function fixDia(n){
+ const g=D.eps[n];
+ const R=await js(`Add complete Arabic diacritics (tashkeel: fatha, damma, kasra, sukun, shadda, tanween) to every word of the following texts so that a speech engine pronounces them correctly. Keep the wording exactly the same and only add diacritics. Do not translate. Return ONLY JSON: {"narration":[...],"onscreen":[...]} with the same number of items in the same order.
+NARRATION: ${JSON.stringify(g.scenes.map(s=>s.narration_ar))}
+ONSCREEN: ${JSON.stringify(g.scenes.map(s=>s.onscreen_ar))}`);
+ if(!Array.isArray(R.narration)||R.narration.length!=g.scenes.length)throw Error('رجع النموذج عدداً غير مطابق، أعد المحاولة');
+ const ok=(a,b)=>typeof b=='string'&&b&&strip(a)==strip(b);
+ g.scenes.forEach((s,i)=>{if(ok(s.narration_ar,R.narration[i]))s.narration_ar=R.narration[i].replace(/"/g,'');
+  if(Array.isArray(R.onscreen)&&ok(s.onscreen_ar,R.onscreen[i]))s.onscreen_ar=R.onscreen[i]});
+}
+async function genMusic(n){
+ const g=D.eps[n];
+ const R=await js(`You are a music supervisor for a Pixar-style educational series for young children. The videos are generated without background music; one track for the whole episode is generated separately and added in editing.
+SERIES MUSIC IDENTITY: ${D.music.en}
+EPISODE ${n}: "${g.title_ar}". It has ${g.scenes.length} scenes of 8 seconds (${g.scenes.length*8} seconds in total):
+${g.scenes.map((s,i)=>(i+1)+'. '+s.place+' — '+s.narration_ar).join('\n')}
+Write:
+${MUSIC_RULES(g.scenes.length)}
+Return ONLY JSON: {"music":{"prompt_en":"","notes_ar":""}}`);
+ const m=R.music||{};if(!S(m.prompt_en))throw Error('لم يُرجع النموذج برومبت موسيقى، أعد المحاولة');
+ g.music={prompt_en:S(m.prompt_en),notes_ar:S(m.notes_ar)};
+}
+async function task(n,label,fn){
+ if(BUSY){$('#st').textContent='انتظر انتهاء التوليد الجاري…';return}
+ BUSY=1;PRE=label+' — حلقة '+n;GEN=n;const pid=D.id;renderEp(n);renderHead();
+ try{await fn(n);save();OPEN.add(n);$('#st').textContent='تم ✓'}catch(e){$('#st').textContent='خطأ: '+e.message}
+ BUSY=0;PRE='';GEN=0;if(D&&D.id==pid){renderEp(n);renderHead()}
 }
 async function runEps(list,single){
  if(BUSY){$('#st').textContent='انتظر انتهاء التوليد الجاري…';return}
@@ -364,6 +404,9 @@ $('#t2').addEventListener('click',e=>{
  else if(a=='cpn'&&g)cp(g.scenes[i].narration_ar,b);
  else if(a=='cpe'&&g)cp(epTxt(n),b);
  else if(a=='dle'&&g)dlt(epTxt(n),'aya-ep'+n+'-'+fname(D.title)+'.txt');
+ else if(a=='cpm'&&g&&g.music)cp(mfin(g),b);
+ else if(a=='mus'&&g)task(n,'اقتراح موسيقى',genMusic);
+ else if(a=='dia'&&g)task(n,'تشكيل الحوار',fixDia);
  else if(a=='cpcap'&&g)cp(g.caption_ar+'\n'+g.hashtags.join(' '),b);
  else if(a=='cpp')cp(ppr(D.places[i]),b);
  else if(a=='cpc')cp(cpr(D.characters[i]),b);
